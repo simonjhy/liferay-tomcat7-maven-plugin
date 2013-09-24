@@ -10,7 +10,7 @@
     <packaging>maven-plugin</packaging>
 
     <name>Liferay Tomcat7 Maven Plugin</name>
-    
+
     <properties>
         <surefire.version>2.13</surefire.version>
         <failsafe.version>${surefire.version}</failsafe.version>
@@ -38,6 +38,16 @@
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>4.10</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-artifact</artifactId>
+            <version>2.2.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-vfs2</artifactId>
+            <version>2.0</version>
         </dependency>
     </dependencies>
 
