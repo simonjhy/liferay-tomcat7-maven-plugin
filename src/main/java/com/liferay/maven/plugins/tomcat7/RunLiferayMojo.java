@@ -19,9 +19,11 @@ import javax.servlet.ServletException;
 
 import org.apache.catalina.Context;
 import org.apache.catalina.LifecycleException;
+import org.apache.catalina.Server;
 import org.apache.catalina.connector.Connector;
 import org.apache.catalina.loader.WebappLoader;
 import org.apache.catalina.realm.MemoryRealm;
+import org.apache.catalina.startup.Catalina;
 import org.apache.catalina.startup.CatalinaProperties;
 import org.apache.catalina.startup.Tomcat;
 import org.apache.catalina.valves.AccessLogValve;
@@ -178,7 +180,7 @@ public class RunLiferayMojo extends RunWarMojo
      *
      * @since 2.0
      */
-    @Parameter( property = "maven.tomcat.ajp.port", defaultValue = "0" )
+    @Parameter( property = "maven.tomcat.ajp.port", defaultValue = "8005" )
     private int ajpPort;
 
     /**
@@ -270,11 +272,15 @@ public class RunLiferayMojo extends RunWarMojo
 
             initConfiguration();
 
-            startContainer();
+            final Tomcat tomcat = startContainer();
 
             if( !fork )
             {
-                waitIndefinitely();
+                Catalina catalina = new Catalina();
+                final Server server = tomcat.getServer();
+                server.setPort( this.ajpPort );
+                catalina.setServer( server );
+                catalina.await();
             }
         }
         catch ( LifecycleException exception )
@@ -309,7 +315,7 @@ public class RunLiferayMojo extends RunWarMojo
     }
 
     @SuppressWarnings( "deprecation" )
-    private void startContainer() throws IOException, LifecycleException, MojoExecutionException, ServletException, ProjectBuildingException
+    private Tomcat startContainer() throws IOException, LifecycleException, MojoExecutionException, ServletException, ProjectBuildingException
     {
         String previousCatalinaBase = System.getProperty( "catalina.base" );
 
@@ -474,6 +480,8 @@ public class RunLiferayMojo extends RunWarMojo
             EmbeddedRegistry.getInstance().register( embeddedTomcat );
 
             watchWebappsDirectory( embeddedTomcat, webappsDir );
+
+            return embeddedTomcat;
         }
         finally
         {

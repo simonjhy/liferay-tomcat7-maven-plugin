@@ -152,7 +152,7 @@ public class ShutdownLiferayMojo extends RunWarMojo
      *
      * @since 2.0
      */
-    @Parameter( property = "maven.tomcat.ajp.port", defaultValue = "0" )
+    @Parameter( property = "maven.tomcat.ajp.port", defaultValue = "8005" )
     private int ajpPort;
 
     /**
@@ -292,7 +292,6 @@ public class ShutdownLiferayMojo extends RunWarMojo
 
             Tomcat embeddedTomcat = new LiferayExtendedTomcat( configurationDir );
             Server s = embeddedTomcat.getServer();
-
 
             Socket socket = null;
             OutputStream stream = null;
