@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import javax.naming.NamingException;
 import javax.servlet.ServletException;
 
 import org.apache.catalina.Context;
@@ -52,6 +53,8 @@ import org.apache.maven.project.ProjectBuilderConfiguration;
 import org.apache.maven.project.ProjectBuildingException;
 import org.apache.maven.shared.filtering.MavenFileFilterRequest;
 import org.apache.maven.shared.filtering.MavenFilteringException;
+import org.apache.naming.NamingEntry;
+import org.apache.naming.resources.FileDirContext;
 import org.apache.tomcat.maven.common.config.AbstractWebapp;
 import org.apache.tomcat.maven.common.run.EmbeddedRegistry;
 import org.apache.tomcat.maven.plugin.tomcat7.run.RunWarMojo;
@@ -340,6 +343,8 @@ public class RunLiferayMojo extends RunWarMojo
 
             embeddedTomcat.setDefaultRealm( memoryRealm );
 
+            createPluginContexts( embeddedTomcat );
+
             if( useNaming )
             {
                 embeddedTomcat.enableNaming();
@@ -589,37 +594,93 @@ public class RunLiferayMojo extends RunWarMojo
         // Let's add other modules
         List<Context> contexts = new ArrayList<Context>();
 
-        for( AbstractWebapp additionalWebapp : getLiferayPlugins() )
+        // check to see if we can deploy context from source
+        final MavenProject parent = this.project.getParent();
+        final List parentModules = parent.getModules();
+
+        if( parentModules != null && ! parentModules.isEmpty() )
         {
-            String contextPath = additionalWebapp.getContextPath();
-
-            if( !contextPath.startsWith( "/" ) )
+            for( Object module : parentModules )
             {
-                contextPath = "/" + contextPath;
-            }
-
-            // check to see if we can deploy context from source
-            final MavenProject parent = this.project.getParent();
-            final List parentModules = parent.getModules();
-
-            if( parentModules != null && ! parentModules.isEmpty() )
-            {
-                for( Object module : parentModules )
+                if( "plugins".equals( module ) )
                 {
-                    File pom = new File( this.project.getBasedir(), module.toString() );
-                    ProjectBuilderConfiguration config = new DefaultProjectBuilderConfiguration();
-                    MavenProject moduleProject = projectBuilder.build( pom, config );
+                    File pluginsPom = new File( this.project.getBasedir().getParentFile(), module.toString() + "/pom.xml" );
+                    final ProjectBuilderConfiguration config = new DefaultProjectBuilderConfiguration();
+                    MavenProject pluginsModule = projectBuilder.build( pluginsPom, config );
 
-                    System.out.println(module);
+                    final List pluginModules = pluginsModule.getModules();
+
+                    if( pluginModules != null && ! pluginModules.isEmpty() )
+                    {
+                        for( Object pluginModule : pluginModules )
+                        {
+                            File pluginPom = new File( pluginsModule.getBasedir(), pluginModule.toString() + "/pom.xml" );
+                            MavenProject plugin = projectBuilder.build( pluginPom, config );
+
+                            String artifactId = plugin.getArtifactId();
+                            String buildDirectory = plugin.getBuild().getDirectory();
+                            String finalName = plugin.getBuild().getFinalName();
+
+                            String baseDir = new File( buildDirectory + "/deployed/" + finalName ).getAbsolutePath();
+                            String contextPath = "/" + artifactId;
+
+                            getLog().info( "create webapp with contextPath " + contextPath );
+
+                            Context context = container.addWebapp( contextPath, baseDir );
+
+                            context.setResources( new MyDirContext( new File( plugin.getBuild().getOutputDirectory() ).getAbsolutePath() ) );
+
+                            if( useSeparateTomcatClassLoader )
+                            {
+                                context.setParentClassLoader( getTomcatClassLoader() );
+                            }
+
+                            context.setReloadable( true );
+
+                            final WebappLoader loader = createWebappLoader();
+
+                            context.setLoader( loader );
+
+                            // tell liferay about context
+
+                            contexts.add( context );
+                        }
+                    }
                 }
             }
-
-            addContextFromArtifact(
-                container, contexts, getArtifact( additionalWebapp ), contextPath, additionalWebapp.getContextFile(),
-                additionalWebapp.isAsWebapp() );
         }
+//        }
 
         return contexts;
+    }
+
+    private static class MyDirContext extends FileDirContext
+    {
+
+        String buildOutputDirectory;
+
+        MyDirContext( String buildOutputDirectory )
+        {
+            this.buildOutputDirectory = buildOutputDirectory;
+        }
+
+        @Override
+        protected List<NamingEntry> doListBindings( String name ) throws NamingException
+        {
+            if( "/WEB-INF/classes".equals( name ) )
+            {
+                if( !new File( buildOutputDirectory ).exists() )
+                {
+                    return Collections.emptyList();
+                }
+                FileDirContext fileDirContext = new FileDirContext();
+                fileDirContext.setDocBase( buildOutputDirectory );
+                NamingEntry namingEntry = new NamingEntry( "/WEB-INF/classes", fileDirContext, -1 );
+                return Collections.singletonList( namingEntry );
+            }
+
+            return super.doListBindings( name );
+        }
     }
 
     private void addContextFromArtifact(
