@@ -187,21 +187,6 @@ public class RunLiferayMojo extends RunWarMojo
     private int ajpPort;
 
     /**
-     * The AJP protocol to run the Tomcat server on.
-     * By default it's ajp.
-     * NOTE The ajp connector will be started only if {@link #ajpPort} > 0.
-     * possible values are:
-     * <ul>
-     * <li>org.apache.coyote.ajp.AjpProtocol - new blocking Java connector that supports an executor</li>
-     * <li>org.apache.coyote.ajp.AjpAprProtocol - the APR/native connector.</li>
-     * </ul>
-     *
-     * @since 2.0
-     */
-    @Parameter( property = "maven.tomcat.ajp.protocol", defaultValue = "org.apache.coyote.ajp.AjpProtocol" )
-    private String ajpProtocol;
-
-    /**
      * The https port to run the Tomcat server on.
      * By default it's 0 this means won't be started.
      * The https connector will be started only for value > 0.
@@ -417,16 +402,6 @@ public class RunLiferayMojo extends RunWarMojo
                 embeddedTomcat.getEngine().getService().addConnector( httpsConnector );
             }
 
-            // create ajp connector
-            Connector ajpConnector = null;
-            if ( ajpPort > 0 )
-            {
-                ajpConnector = new Connector( ajpProtocol );
-                ajpConnector.setPort( ajpPort );
-                ajpConnector.setURIEncoding( uriEncoding );
-                embeddedTomcat.getEngine().getService().addConnector( ajpConnector );
-            }
-
             if ( ! getAdditionalWebapps().isEmpty() )
             {
                 createDependencyContexts( embeddedTomcat );
@@ -452,14 +427,6 @@ public class RunLiferayMojo extends RunWarMojo
                     "tomcat.maven.https.port", Integer.toString( httpsConnector.getLocalPort() ) );
                 portProperties.put( "tomcat.maven.https.port", Integer.toString( httpsConnector.getLocalPort() ) );
                 System.setProperty( "tomcat.maven.https.port", Integer.toString( httpsConnector.getLocalPort() ) );
-            }
-
-            if( ajpConnector != null )
-            {
-                session.getExecutionProperties().put(
-                    "tomcat.maven.ajp.port", Integer.toString( ajpConnector.getLocalPort() ) );
-                portProperties.put( "tomcat.maven.ajp.port", Integer.toString( ajpConnector.getLocalPort() ) );
-                System.setProperty( "tomcat.maven.ajp.port", Integer.toString( ajpConnector.getLocalPort() ) );
             }
 
             if( propertiesPortFilePath != null )
