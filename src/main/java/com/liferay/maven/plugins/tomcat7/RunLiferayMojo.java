@@ -451,6 +451,8 @@ public class RunLiferayMojo extends RunWarMojo
 
             EmbeddedRegistry.getInstance().register( embeddedTomcat );
 
+            // TODO deploy existing webapps in folder exactly for portal-web
+
             watchWebappsDirectory( embeddedTomcat, webappsDir );
 
             return embeddedTomcat;
@@ -485,7 +487,6 @@ public class RunLiferayMojo extends RunWarMojo
 
             public void fileChanged( FileChangeEvent event ) throws Exception
             {
-                // TODO Auto-generated method stub
 
             }
         });
@@ -588,29 +589,34 @@ public class RunLiferayMojo extends RunWarMojo
                             String buildDirectory = plugin.getBuild().getDirectory();
                             String finalName = plugin.getBuild().getFinalName();
 
-                            String baseDir = new File( buildDirectory + "/deployed/" + finalName ).getAbsolutePath();
-                            String contextPath = "/" + artifactId;
+                            // need to look int a 'direct-deployed' folder.
+                            String baseDir = new File( buildDirectory + "/direct-deployed/" + finalName ).getAbsolutePath();
 
-                            getLog().info( "create webapp with contextPath " + contextPath );
-
-                            Context context = container.addWebapp( contextPath, baseDir );
-
-                            context.setResources( new MyDirContext( new File( plugin.getBuild().getOutputDirectory() ).getAbsolutePath() ) );
-
-                            if( useSeparateTomcatClassLoader )
+                            if( new File( baseDir ).exists() )
                             {
-                                context.setParentClassLoader( getTomcatClassLoader() );
+                                String contextPath = "/" + artifactId;
+
+                                getLog().info( "create webapp with contextPath " + contextPath );
+
+                                Context context = container.addWebapp( contextPath, baseDir );
+
+                                context.setResources( new MyDirContext( new File( plugin.getBuild().getOutputDirectory() ).getAbsolutePath() ) );
+
+                                if( useSeparateTomcatClassLoader )
+                                {
+                                    context.setParentClassLoader( getTomcatClassLoader() );
+                                }
+
+                                context.setReloadable( true );
+
+                                final WebappLoader loader = createWebappLoader();
+
+                                context.setLoader( loader );
+
+                                // tell liferay about context
+
+                                contexts.add( context );
                             }
-
-                            context.setReloadable( true );
-
-                            final WebappLoader loader = createWebappLoader();
-
-                            context.setLoader( loader );
-
-                            // tell liferay about context
-
-                            contexts.add( context );
                         }
                     }
                 }
@@ -685,7 +691,6 @@ public class RunLiferayMojo extends RunWarMojo
             }
         }
 
-        // TODO make that configurable ?
         // WebappLoader webappLoader = new WebappLoader( Thread.currentThread().getContextClassLoader() );
         WebappLoader webappLoader = createWebappLoader();
         Context context = null;
@@ -740,34 +745,6 @@ public class RunLiferayMojo extends RunWarMojo
      */
 
     boolean keepWaiting = true;
-
-    private void waitIndefinitely()
-    {
-        while(keepWaiting){
-            try
-            {
-                Thread.sleep( 1000 );
-            }
-            catch( InterruptedException e )
-            {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            }
-        }
-//        Object lock = new Object();
-//
-//        synchronized( lock )
-//        {
-//            try
-//            {
-//                lock.wait();
-//            }
-//            catch( InterruptedException exception )
-//            {
-//                getLog().warn( messagesProvider.getMessage( "AbstractRunMojo.interrupted" ), exception );
-//            }
-//        }
-    }
 
     /**
      * Copies the specified class resource to the specified file.
