@@ -4,6 +4,7 @@ package com.liferay.maven.plugins.tomcat7;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -335,7 +336,7 @@ public class RunLiferayMojo extends RunWarMojo
                 embeddedTomcat.enableNaming();
             }
 
-            final File webappsDir = new File( configurationDir, "webapps" );
+            final File webappsDir = getWebappsDir();
 
             embeddedTomcat.getHost().setAppBase( webappsDir.getAbsolutePath() );
 
@@ -451,7 +452,25 @@ public class RunLiferayMojo extends RunWarMojo
 
             EmbeddedRegistry.getInstance().register( embeddedTomcat );
 
-            // TODO deploy existing webapps in folder exactly for portal-web
+            // add webapp directories already deployed to /target/tomcat/webapps other than portal
+//            final File webappsDir = getWebappsDir();
+
+            final File[] existingWebapps = webappsDir.listFiles
+            (
+                new FilenameFilter()
+                {
+                    public boolean accept( File dir, String name )
+                    {
+                        return ! "portal-web".equals( name );
+                    }
+                }
+            );
+
+            for( File existingWebapp : existingWebapps )
+            {
+                hotDeployDirectory( embeddedTomcat, existingWebapp );
+            }
+
 
             watchWebappsDirectory( embeddedTomcat, webappsDir );
 
@@ -466,30 +485,39 @@ public class RunLiferayMojo extends RunWarMojo
         }
     }
 
+    private File getWebappsDir()
+    {
+        return new File( configurationDir, "webapps" );
+    }
+
     private void watchWebappsDirectory( final Tomcat container, File webappsDir) throws FileSystemException
     {
         FileSystemManager fsManager = VFS.getManager();
         FileObject listendir = fsManager.resolveFile( webappsDir.getAbsolutePath() );
 
-        DefaultFileMonitor fm = new DefaultFileMonitor(new FileListener()
-        {
-
-            public void fileDeleted( FileChangeEvent event ) throws Exception
+        DefaultFileMonitor fm = new DefaultFileMonitor
+        (
+            new FileListener()
             {
 
-            }
+                public void fileDeleted( FileChangeEvent event ) throws Exception
+                {
+                    //TODO undeploy context
+                }
 
-            public void fileCreated( FileChangeEvent event ) throws Exception
-            {
-                File dirToDeploy = new File( event.getFile().getURL().getFile() );
-                hotDeployDirectory( container, dirToDeploy );
-            }
+                public void fileCreated( FileChangeEvent event ) throws Exception
+                {
+                    File dirToDeploy = new File( event.getFile().getURL().getFile() );
+                    hotDeployDirectory( container, dirToDeploy );
+                }
 
-            public void fileChanged( FileChangeEvent event ) throws Exception
-            {
+                public void fileChanged( FileChangeEvent event ) throws Exception
+                {
 
+                }
             }
-        });
+        );
+
         fm.setRecursive(false);
         fm.addFile(listendir);
         fm.start();
@@ -554,6 +582,7 @@ public class RunLiferayMojo extends RunWarMojo
      * @return dependency tomcat contexts of warfiles in scope "tomcat"
      * @throws ProjectBuildingException
      */
+    @SuppressWarnings( "rawtypes" )
     private Collection<Context> createPluginContexts( Tomcat container ) throws MojoExecutionException,
         MalformedURLException, ServletException, IOException, ProjectBuildingException
     {
@@ -566,6 +595,7 @@ public class RunLiferayMojo extends RunWarMojo
         final MavenProject parent = this.project.getParent();
         final List parentModules = parent.getModules();
 
+        // add direct deployed plugin modules
         if( parentModules != null && ! parentModules.isEmpty() )
         {
             for( Object module : parentModules )
@@ -594,26 +624,12 @@ public class RunLiferayMojo extends RunWarMojo
 
                             if( new File( baseDir ).exists() )
                             {
-                                String contextPath = "/" + artifactId;
+                                final String contextPath = "/" + artifactId;
 
-                                getLog().info( "create webapp with contextPath " + contextPath );
+                                final String buildPath = plugin.getBuild().getOutputDirectory();
+//                                final String buildPath = new File( plugin.getBuild().getOutputDirectory() ).getAbsolutePath();
 
-                                Context context = container.addWebapp( contextPath, baseDir );
-
-                                context.setResources( new MyDirContext( new File( plugin.getBuild().getOutputDirectory() ).getAbsolutePath() ) );
-
-                                if( useSeparateTomcatClassLoader )
-                                {
-                                    context.setParentClassLoader( getTomcatClassLoader() );
-                                }
-
-                                context.setReloadable( true );
-
-                                final WebappLoader loader = createWebappLoader();
-
-                                context.setLoader( loader );
-
-                                // tell liferay about context
+                                final Context context = createContext( container, contextPath, baseDir, buildPath );
 
                                 contexts.add( context );
                             }
@@ -622,9 +638,30 @@ public class RunLiferayMojo extends RunWarMojo
                 }
             }
         }
-//        }
 
         return contexts;
+    }
+
+    private Context createContext( Tomcat container, String contextPath, String baseDir, String buildOutputDirPath )
+        throws ServletException, MojoExecutionException, IOException
+    {
+        getLog().info( "create webapp with contextPath " + contextPath );
+
+        final Context context = container.addWebapp( contextPath, baseDir );
+        context.setResources( new MyDirContext( buildOutputDirPath ) );
+
+        if( useSeparateTomcatClassLoader )
+        {
+            context.setParentClassLoader( getTomcatClassLoader() );
+        }
+
+        context.setReloadable( true );
+
+        final WebappLoader loader = createWebappLoader();
+
+        context.setLoader( loader );
+
+        return context;
     }
 
     private static class MyDirContext extends FileDirContext
@@ -662,7 +699,7 @@ public class RunLiferayMojo extends RunWarMojo
     {
         getLog().info( "Deploy warfile: " + String.valueOf( artifact.getFile() ) + " to contextPath: " + contextPath );
 
-        File webapps = new File( configurationDir, "webapps" );
+        File webapps = getWebappsDir();
         File artifactWarDir = new File( webapps, artifact.getArtifactId() );
 
         if( !artifactWarDir.exists() )
@@ -817,7 +854,7 @@ public class RunLiferayMojo extends RunWarMojo
             File logDir = new File( configurationDir, "logs" );
             logDir.mkdir();
 
-            File webappsDir = new File( configurationDir, "webapps" );
+            File webappsDir = getWebappsDir();
             webappsDir.mkdir();
 
             if( additionalConfigFilesDir != null && additionalConfigFilesDir.exists() )
